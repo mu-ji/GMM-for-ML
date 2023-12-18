@@ -23,7 +23,8 @@ from sklearn.mixture import GaussianMixture
 import csv
 
 def read_data(distance):
-    f = open ('C:/Users/11422/Desktop/work_on_nrf52840/openwsn-fw/projects/nrf52840_dk/01bsp_rtt/experiment2/distance{}.txt'.format(distance), 'r')
+    #f = open ('C:/Users/11422/Desktop/work_on_nrf52840/openwsn-fw/projects/nrf52840_dk/01bsp_rtt/experiment2/distance{}.txt'.format(distance), 'r')
+    f = open ('5msexperiment/distance{}.txt'.format(distance), 'r')
     time_list = []
     rssi_list = []
     data = f.readlines()
@@ -36,16 +37,14 @@ def read_data(distance):
     rssi = np.array(rssi_list)
 
     data = np.vstack((time,rssi))
-
     return data
 
 def construct_train_and_test_data(data_list):
     train_data = []
     test_data = []
     for i in data_list:
-        train_data.append(i[:,:1000])
-        test_data.append(i[:,1000:])
-
+        train_data.append(i[:,:500])
+        test_data.append(i[:,500:])
     return train_data,test_data
 
 def GMM_filter(data):
@@ -95,7 +94,7 @@ def build_trainset_and_testset(train_data,test_data,n,p):
 
     for i in range(len(train_data)):
         for j in range(n):
-            k = np.random.randint(1000 - p)
+            k = np.random.randint(500 - p)
             train_x.append(train_data[i,:,k:k+p])
             train_y.append(i)
 
@@ -112,7 +111,7 @@ def build_trainset_and_testset(train_data,test_data,n,p):
             train_x_time_mean.append(np.mean(train_data[i,0,k:k+p]))
             train_x_time_var.append(np.var(train_data[i,0,k:k+p]))
 
-        k = np.random.randint(1000 - p)
+        k = np.random.randint(500 - p)
         test_x.append(test_data[i,:,k:k+p])
         test_y.append(i)
 
@@ -170,7 +169,7 @@ def main():
     test_dataset = np.array(test_data)         #(16,2,1000)
     test_dataset[:,0:1,:] -= 20074.659
 
-    train_packet,test_packet = build_trainset_and_testset(train_dataset,test_dataset,sample_times,500)
+    train_packet,test_packet = build_trainset_and_testset(train_dataset,test_dataset,sample_times,200)
 
     train_x = np.array(train_packet[0])
     train_y = np.array(train_packet[1])
@@ -335,17 +334,29 @@ def main():
 
     tt_loss = criterion(predictions,test_y)
     print(tt_loss.item())
+    torch.save(model.state_dict(), 'indoor_model')
     # 将预测结果转换为numpy数组
     predictions = predictions.numpy()
 
+    outdoor_model = RegressionNet(input_size, hidden_size, output_size)
+    outdoor_model.load_state_dict(torch.load('outdoor_model'))
+
+    with torch.no_grad():
+        outdoor_predictions = outdoor_model(test_x)
+    
+    outdoor_loss = criterion(outdoor_predictions,test_y)
+
+
     plt.figure()
-    ax = plt.subplot(121)
+    ax = plt.subplot(211)
     ax.scatter([i for i in range(len(test_x))],predictions, c = 'b',label = 'ML_predictions')
+    ax.scatter([i for i in range(len(test_x))],outdoor_predictions, c = 'g',label = 'outdoor_predictions')
     ax.plot([i for i in range(len(test_x))],[i for i in range(len(test_x))],c = 'r',label = 'true value')
+    ax.scatter(distance_list,[(i)/(2*16000000)*299792458*0.4 for i in test_x_time_mean],c = 'y', label = 'only RTT time(coefficient=0.4)')
     ax.plot([i for i in range(len(test_x))],[i+1 for i in range(len(test_x))],c = 'r',label = '+1 error boundary',linestyle = '--')
     ax.plot([i for i in range(len(test_x))],[i-1 for i in range(len(test_x))],c = 'r',label = '-1 error boundary',linestyle = '--')
     ax.legend()
-    ax = plt.subplot(122)
+    ax = plt.subplot(212)
     ax.plot([i for i in range(num_epochs)],train_loss,c='r',label='training loss')
     ax.plot([i for i in range(num_epochs)],test_loss,c='b',label='test loss')
     ax.legend()

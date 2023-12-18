@@ -10,9 +10,11 @@ import os
 zero_meantime = 20074.659
 
 def read_data(distance):
-    f = open ('experiment2\distance{}.txt'.format(distance), 'r')
+    f = open ('5msexperiment\distance{}.txt'.format(distance), 'r')
+    #f = open ('experiment2\distance{}.txt'.format(distance), 'r')
 
     data = f.readlines()
+
     time_data = []
     rssi_data = []
     for i in range(len(data)):
@@ -42,15 +44,21 @@ for i in time_data_list:
     time_data_var_list.append(i.var())
 
 my_coefficient = 0.4
+print(time_data_list)
 
 fig = plt.figure()
-ax1 = fig.add_subplot(111)
+
+ax1 = fig.add_subplot(211)
 ax1.scatter(distance_list,[(i-zero_meantime)/(2*16000000)*299792458*my_coefficient for i in time_data_mean_list],c = 'b', label = 'mean distance')
 ax1.plot(distance_list,distance_list,c = 'r', label = 'true distance')
 ax1.plot(distance_list,[i + 1 for i in distance_list],c = 'r', label = '+1 err', linestyle = '--')
 ax1.plot(distance_list,[i - 1 for i in distance_list],c = 'r', label = '-1 err', linestyle = '--')
-#ax2 = fig.add_subplot(122)
-#ax2.plot(distance_list,time_data_var_list,c = 'b', label = 'varance')
-plt.title('only mean time with coefficient')
+ax2 = fig.add_subplot(212)
+
+for i in range(len(time_data_list)):
+    for j in range(len(time_data_list[i])):
+        time_data_list[i][j] -= zero_meantime
+ax2.boxplot(time_data_list, showfliers=False)
+plt.xticks(distance_list, ['{}'.format(i) for i in distance_list])
 plt.legend()
 plt.show()

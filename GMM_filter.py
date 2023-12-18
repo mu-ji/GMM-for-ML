@@ -10,6 +10,9 @@ import os
 import ml_experiment2 as ml
 from sklearn.mixture import GaussianMixture
 
+zero_meantime = 20074.659
+my_coefficient = 0.4
+
 sample_times = 10
 distance_list = [i for i in range(16)]
 data_list = []
@@ -42,8 +45,9 @@ def GMM_filter(data):
     means = gmm.means_
     covariances = gmm.covariances_
     weights = gmm.weights_
-
-
+    #coefficient = 0.9
+    means = means[0][0]*weights[0] + means[1][0]*weights[1]
+    #means = means[0][0]*coefficient + means[1][0]*(1-coefficient)
     return means,covariances,weights
 
 def compute_number_of_components(data,min_components,max_components):
@@ -68,14 +72,21 @@ def compute_number_of_components(data,min_components,max_components):
 max_weight_mean_list = []
 max_weight_covariance_list = []
 for i in range(len(train_data)):
-    max_weight_mean,max_weight_covariance = GMM_filter(train_data[i][0].reshape((len(train_data[i][0]),1)))
+    max_weight_mean,max_weight_covariance,weights = GMM_filter(train_data[i][0].reshape((len(train_data[i][0]),1)))
     print(max_weight_mean)
     print(max_weight_covariance)
-    max_weight_mean_list.append(max_weight_mean[0])
+    max_weight_mean_list.append(max_weight_mean)
     max_weight_covariance_list.append(max_weight_covariance[0][0])
 
 plt.figure()
-plt.plot([i for i in range(16)],train_data_mean[:,0:1,:].reshape((16,1)),c = 'r',label = 'time mean')
-plt.plot([i for i in range(16)],max_weight_mean_list,c='b',label='filtered')
+ax = plt.subplot(211)
+ax.plot([i for i in range(16)],train_data_mean[:,0:1,:].reshape((16,1)),c = 'r',label = 'time mean')
+ax.plot([i for i in range(16)],max_weight_mean_list,c='b',label='filtered')
+plt.legend()
+ax = plt.subplot(212)
+ax.scatter(distance_list,[(i-zero_meantime)/(2*16000000)*299792458*my_coefficient for i in max_weight_mean_list],c = 'b', label = 'mean distance')
+ax.plot(distance_list,distance_list,c = 'r', label = 'true distance')
+ax.plot(distance_list,[i + 1 for i in distance_list],c = 'r', label = '+1 err', linestyle = '--')
+ax.plot(distance_list,[i - 1 for i in distance_list],c = 'r', label = '-1 err', linestyle = '--')
 plt.legend()
 plt.show() 
