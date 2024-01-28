@@ -13,6 +13,8 @@ from sklearn import linear_model
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge, Lasso
 from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import PolynomialFeatures
+import joblib
 
 import torch
 import torch.nn as nn
@@ -22,9 +24,17 @@ from sklearn.mixture import GaussianMixture
 
 import csv
 
+def compute_err(distance_list, pre_list):
+    error_list = []
+    for i in range(len(distance_list)):
+        error = np.abs(distance_list[i] - pre_list[i])
+        error_list.append(error)
+    
+    return np.mean(error_list)
+
 def read_data(distance):
     #f = open ('C:/Users/11422/Desktop/work_on_nrf52840/openwsn-fw/projects/nrf52840_dk/01bsp_rtt/experiment2/distance{}.txt'.format(distance), 'r')
-    f = open ('5msexperiment/distance{}.txt'.format(distance), 'r')
+    f = open ('indoor_without_people/distance{}.txt'.format(distance), 'r')
     time_list = []
     rssi_list = []
     data = f.readlines()
@@ -43,8 +53,8 @@ def construct_train_and_test_data(data_list):
     train_data = []
     test_data = []
     for i in data_list:
-        train_data.append(i[:,:500])
-        test_data.append(i[:,500:])
+        train_data.append(i[:,:60000])
+        test_data.append(i[:,60000:])
     return train_data,test_data
 
 def GMM_filter(data):
@@ -91,10 +101,9 @@ def build_trainset_and_testset(train_data,test_data,n,p):
     test_x_time_mean = []
     test_x_time_var = []
 
-
-    for i in range(len(train_data)):
-        for j in range(n):
-            k = np.random.randint(500 - p)
+    for i in range(len(train_data)):        #each distance
+        for j in range(n):                  #sample numbers
+            k = np.random.randint(60000 - p)        #sample length
             train_x.append(train_data[i,:,k:k+p])
             train_y.append(i)
 
@@ -111,7 +120,7 @@ def build_trainset_and_testset(train_data,test_data,n,p):
             train_x_time_mean.append(np.mean(train_data[i,0,k:k+p]))
             train_x_time_var.append(np.var(train_data[i,0,k:k+p]))
 
-        k = np.random.randint(500 - p)
+        k = np.random.randint(60000 - p)
         test_x.append(test_data[i,:,k:k+p])
         test_y.append(i)
 
@@ -154,8 +163,8 @@ def data_loss(X,Y,output):
 
 
 def main():
-    sample_times = 20
-    distance_list = [i for i in range(16)]
+    sample_times = 1000
+    distance_list = [i for i in range(1,12)]
     data_list = []
     train_data = []
     test_data = []
@@ -249,7 +258,6 @@ def main():
     save_data_to_csv([list(row) for row in test_x.tolist()],'test_x.csv')
     save_data_to_csv([list(row) for row in test_y.reshape((len(test_y),1)).tolist()],'test_y.csv')
 
-    lin_predictions = lin_model.predict(test_x)
     ridge_predictions = ridge_model.predict(test_x)
     lasso_predictions = lasso_model.predict(test_x)
 
@@ -266,13 +274,11 @@ def main():
     plt.legend()
     plt.show()
     
-    print(X.shape)
-    print(Y.shape)
     X = torch.from_numpy(X[:,:]).float()
-    print(X)
-    Y = torch.from_numpy(Y.reshape(16*sample_times,1)).float()
+
+    Y = torch.from_numpy(Y.reshape(11*sample_times,1)).float()
     test_x = torch.from_numpy(test_x[:,:]).float()
-    test_y = torch.from_numpy(test_y.reshape((16,1))).float()
+    test_y = torch.from_numpy(test_y.reshape((11,1))).float()
     
     class RegressionNet(nn.Module):
         def __init__(self, input_size, hidden_size, output_size):
@@ -293,34 +299,27 @@ def main():
             out = self.fc3(out)
             return out
         
-
-    # 定义模型的超参数
     input_size = 10
-    hidden_size = 512
+    hidden_size = 128
     output_size = 1
 
-    # 创建模型实例
     model = RegressionNet(input_size, hidden_size, output_size)
 
-    # 定义损失函数和优化器
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    # 进行模型训练
     num_epochs = 1000
     train_loss = []
     test_loss = []
     for epoch in range(num_epochs):
-        # 前向传播
+
         outputs = model(X)
         loss = criterion(outputs, Y) #+ 0.0001*data_loss(X,Y,outputs)
 
-        # 反向传播和优化
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        # 打印训练过程中的损失
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
         train_loss.append(loss.item())
 
@@ -328,33 +327,46 @@ def main():
         tt_loss = criterion(predictions,test_y)
         test_loss.append(tt_loss.item())
 
-    # 在测试集上进行预测
     with torch.no_grad():
         predictions = model(test_x)
 
     tt_loss = criterion(predictions,test_y)
     print(tt_loss.item())
-    torch.save(model.state_dict(), 'indoor_model')
-    # 将预测结果转换为numpy数组
+    torch.save(model.state_dict(), 'without_people_model')
+
     predictions = predictions.numpy()
 
-    outdoor_model = RegressionNet(input_size, hidden_size, output_size)
-    outdoor_model.load_state_dict(torch.load('outdoor_model'))
+    #with_people_model = RegressionNet(input_size, hidden_size, output_size)
+    #with_people_model.load_state_dict(torch.load('with_people_model'))
 
-    with torch.no_grad():
-        outdoor_predictions = outdoor_model(test_x)
+    #with torch.no_grad():
+    #    outdoor_predictions = outdoor_model(test_x)
     
-    outdoor_loss = criterion(outdoor_predictions,test_y)
+    #outdoor_loss = criterion(outdoor_predictions,test_y)
+
+    #new_model = joblib.load('without_people_model')
+
+    #new_model_pre = with_people_model(test_x)
+    #new_model_pre = new_model_pre.detach().numpy()
+
+    #multi_pre = []
+    #for i in range(len(distance_list)):
+    #    #print(predictions[i][0])
+    #    multi_pre.append((predictions[i][0]+new_model_pre[i])/2)
 
 
     plt.figure()
     ax = plt.subplot(211)
-    ax.scatter([i for i in range(len(test_x))],predictions, c = 'b',label = 'ML_predictions')
-    ax.scatter([i for i in range(len(test_x))],outdoor_predictions, c = 'g',label = 'outdoor_predictions')
-    ax.plot([i for i in range(len(test_x))],[i for i in range(len(test_x))],c = 'r',label = 'true value')
-    ax.scatter(distance_list,[(i)/(2*16000000)*299792458*0.4 for i in test_x_time_mean],c = 'y', label = 'only RTT time(coefficient=0.4)')
-    ax.plot([i for i in range(len(test_x))],[i+1 for i in range(len(test_x))],c = 'r',label = '+1 error boundary',linestyle = '--')
-    ax.plot([i for i in range(len(test_x))],[i-1 for i in range(len(test_x))],c = 'r',label = '-1 error boundary',linestyle = '--')
+    ax.scatter(distance_list,predictions, c = 'b',label = 'ML_predictions error={}'.format(compute_err(distance_list,predictions.reshape(11,1))))
+    #ax.scatter(distance_list,new_model_pre, c = 'g',label = 'with people situation error={}'.format(compute_err(distance_list,new_model_pre)))
+    #ax.scatter(distance_list,multi_pre, c = 'y',label = 'multi_predictions error={}'.format(compute_err(distance_list,multi_pre)))
+    ax.plot(distance_list,distance_list,c = 'r',label = 'true value')
+    #ax.scatter(distance_list,[(i)/(2*16000000)*299792458*0.4 for i in test_x_time_mean],c = 'y', label = 'only RTT time(coefficient=0.4)')
+    ax.plot(distance_list,[i+1 for i in distance_list],c = 'r',label = '+1 error boundary',linestyle = '--')
+    ax.plot(distance_list,[i-1 for i in distance_list],c = 'r',label = '-1 error boundary',linestyle = '--')
+    ax.set_xlabel('true distance')
+    ax.set_ylabel('predict distance')
+    ax.set_title('without people walking situation')
     ax.legend()
     ax = plt.subplot(212)
     ax.plot([i for i in range(num_epochs)],train_loss,c='r',label='training loss')
@@ -362,6 +374,8 @@ def main():
     ax.legend()
     plt.show()
     
+    print(predictions)
+    #print(new_model_pre)
 
     
 
